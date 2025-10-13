@@ -2,6 +2,8 @@
 
 A complete implementation of a parking lot management system based on the design document requirements. This Spring Boot application demonstrates various design patterns, concurrency handling, and REST API design.
 
+Get the comprehensive design discussion here - https://medium.com/@codefarm0/how-to-design-a-parking-lot-management-system-interview-deep-dive-5c4ddfdaebbd
+
 ## 🎯 Features Implemented
 
 ### Core Features
