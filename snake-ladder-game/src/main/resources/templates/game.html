@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8" />
+    <title th:text="${'Game ' + game.id}">Game</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
+    <style>
+        body { max-width: 1200px; margin: 2rem auto; }
+        .board-wrap { position: relative; width: max-content; }
+        .board { position: relative; z-index: 1; display: grid; grid-template-rows: repeat(10, 56px); gap: 6px; }
+        .row { display: grid; grid-template-columns: repeat(10, 56px); gap: 6px; }
+        .cell { position: relative; width: 56px; height: 56px; display: flex; align-items: center; justify-content: center; background: #f2f2f2; border-radius: 8px; font-size: 12px; }
+        .cell:nth-child(odd) { background: #f7f7f7; }
+        .tokens { position: absolute; bottom: 2px; left: 2px; display: flex; gap: 2px; flex-wrap: wrap; }
+        .token { width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgba(0,0,0,.2); box-shadow: 0 1px 2px rgba(0,0,0,.25); }
+        .players { margin-top: 1rem; }
+        .badge { display: inline-block; padding: 2px 6px; border-radius: 4px; background: #0366d6; color: white; font-size: 12px; }
+        .controls { margin: 1rem 0; display: flex; gap: .5rem; }
+        .winner { padding: .5rem .75rem; border-radius: 6px; background: #2a9d8f; color: white; }
+        .overlay { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+        .ladder { stroke: #2a9d8f; stroke-width: 6; fill: none; opacity: .9; }
+        .ladder-rung { stroke: #2a9d8f; stroke-width: 3; opacity: .9; }
+        .snake { stroke: #e76f51; stroke-width: 5; fill: none; opacity: .8; }
+        .hud { display: flex; align-items: center; gap: .75rem; margin: .5rem 0 1rem; }
+        .dice { width: 56px; height: 56px; background: #fff; border-radius: 10px; display: flex; align-items: center; justify-content: center; border: 2px solid #333; font-weight: 700; font-size: 26px; box-shadow: 0 6px 16px rgba(0,0,0,.15); }
+        .floating { animation: float 6s ease-in-out infinite; }
+        @keyframes float { 0% { transform: translateY(0); } 50% { transform: translateY(-6px); } 100% { transform: translateY(0); } }
+        .animate-token { transition: transform 500ms ease-in-out; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Snake &amp; Ladder - Game <span th:text="${game.id}"></span></h1>
+    <p>Status: <strong th:text="${status}"></strong></p>
+    <p th:if="${winnerName != null}" class="winner">Winner: <strong th:text="${winnerName}"></strong></p>
+    <p th:if="${lastMessage != null}" style="margin:.5rem 0;">Last move: <strong th:text="${lastMessage}"></strong></p>
+
+    <div class="controls">
+        <form method="post" th:action="@{'/game/' + ${game.id} + '/start'}" th:if="${status.name() == 'WAITING_FOR_PLAYERS'}">
+            <button type="submit">Start Game</button>
+        </form>
+        <form method="post" th:action="@{'/game/' + ${game.id} + '/turn'}" th:if="${status.name() == 'IN_PROGRESS'}">
+            <button type="submit">Play Turn</button>
+        </form>
+        <a href="/" role="button" class="secondary">Home</a>
+    </div>
+
+    <div class="hud">
+        <div class="dice floating" th:if="${lastRoll != null}" th:text="${lastRoll}"></div>
+        <div th:if="${lastMessage != null}">Last move: <strong th:text="${lastMessage}"></strong></div>
+    </div>
+
+    <section class="players">
+        <h3>Players</h3>
+        <ul>
+            <li th:each="p,iter : ${players}">
+                <span class="badge" th:text="${iter.index == game.currentPlayerIndex ? '▶' : ''}"></span>
+                <strong th:style="${'color:' + playerColors[p.id]}" th:text="${p.name}"></strong>
+                <span>at</span>
+                <strong th:text="${p.position}"></strong>
+                <span>(turns: <span th:text="${p.turnsPlayed}"></span>)</span>
+            </li>
+        </ul>
+    </section>
+
+    <section>
+        <h3>Board (1-100)</h3>
+        <div class="board-wrap" id="boardWrap">
+            <svg class="overlay" id="overlay"></svg>
+            <div class="board" id="board">
+                <div class="row" th:each="row : ${#numbers.sequence(9,0,-1)}" th:with="start=${row*10 + 1}, end=${row*10 + 10}">
+                    <div class="cell" th:each="n : ${row % 2 == 0 ? #numbers.sequence(start,end) : #numbers.sequence(end,start,-1)}" th:attr="data-square=${n}">
+                        <span th:text="${n}"></span>
+                        <div class="tokens">
+                            <div class="token" th:each="p : ${players}" th:if="${p.position == n}" th:style="${'background:' + playerColors[p.id]}"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <script th:inline="javascript">
+        const snakes = /*[[${snakeLines}]]*/ [];
+        const ladders = /*[[${ladderLines}]]*/ [];
+        const moveFrom = /*[[${moveFrom}]]*/ null;
+        const moveTo = /*[[${moveTo}]]*/ null;
+        const movePlayerId = /*[[${movePlayerId}]]*/ null;
+
+        function cellCenter(n) {
+            const cell = document.querySelector(`#board .cell[data-square='${n}']`);
+            const board = document.getElementById('board');
+            const boardRect = board.getBoundingClientRect();
+            const r = cell.getBoundingClientRect();
+            return { x: r.left - boardRect.left + r.width / 2, y: r.top - boardRect.top + r.height / 2 };
+        }
+
+        function sizeOverlay() {
+            const board = document.getElementById('board');
+            const overlay = document.getElementById('overlay');
+            const r = board.getBoundingClientRect();
+            overlay.setAttribute('width', r.width);
+            overlay.setAttribute('height', r.height);
+        }
+
+        function draw() {
+            sizeOverlay();
+            const overlay = document.getElementById('overlay');
+            overlay.innerHTML = '';
+
+            // Draw ladders as double lines with rungs
+            ladders.forEach(l => {
+                const a = cellCenter(l.bottom);
+                const b = cellCenter(l.top);
+                const dx = b.x - a.x, dy = b.y - a.y;
+                const ctrl = { x: a.x + dx * 0.5 - dy * 0.1, y: a.y + dy * 0.5 + dx * 0.1 };
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                path.setAttribute('d', `M ${a.x} ${a.y} Q ${ctrl.x} ${ctrl.y} ${b.x} ${b.y}`);
+                path.setAttribute('class', 'ladder');
+                overlay.appendChild(path);
+                // rungs
+                for (let t = 0.2; t < 0.9; t += 0.18) {
+                    const x = a.x + dx * t; const y = a.y + dy * t;
+                    const nx = -dy; const ny = dx; const len = Math.hypot(nx, ny);
+                    const ux = (nx / len) * 8, uy = (ny / len) * 8;
+                    const rung = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                    rung.setAttribute('x1', x - ux); rung.setAttribute('y1', y - uy);
+                    rung.setAttribute('x2', x + ux); rung.setAttribute('y2', y + uy);
+                    rung.setAttribute('class', 'ladder-rung');
+                    overlay.appendChild(rung);
+                }
+            });
+
+            // Draw snakes as red curves
+            snakes.forEach(s => {
+                const a = cellCenter(s.head);
+                const b = cellCenter(s.tail);
+                const dx = b.x - a.x, dy = b.y - a.y;
+                const ctrl1 = { x: a.x + dx * 0.33 + dy * 0.15, y: a.y + dy * 0.33 - dx * 0.15 };
+                const ctrl2 = { x: a.x + dx * 0.66 - dy * 0.15, y: a.y + dy * 0.66 + dx * 0.15 };
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                path.setAttribute('d', `M ${a.x} ${a.y} C ${ctrl1.x} ${ctrl1.y}, ${ctrl2.x} ${ctrl2.y}, ${b.x} ${b.y}`);
+                path.setAttribute('class', 'snake');
+                overlay.appendChild(path);
+            });
+        }
+
+        function animateMove() {
+            if (!moveFrom || !moveTo) return;
+            const fromCell = document.querySelector(`#board .cell[data-square='${moveFrom}']`);
+            const toCell = document.querySelector(`#board .cell[data-square='${moveTo}']`);
+            if (!fromCell || !toCell) return;
+            const token = toCell.querySelector(`.token`);
+            if (!token) return;
+            token.classList.add('animate-token');
+            token.style.transform = 'scale(1.25)';
+            setTimeout(() => token.style.transform = 'scale(1)', 500);
+        }
+
+        window.addEventListener('load', () => { draw(); animateMove(); });
+        window.addEventListener('resize', draw);
+    </script>
+</main>
+</body>
+</html>
+
+

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8" />
+    <title>Snake & Ladder</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
+    <style>
+        body { max-width: 900px; margin: 2rem auto; }
+    </style>
+    </head>
+<body>
+    <main>
+        <h1>Snake &amp; Ladder</h1>
+        <p>Create a new game with 2-6 players.</p>
+        <form method="post" th:action="@{/create}">
+            <fieldset>
+                <legend>Players</legend>
+                <div id="players">
+                    <input type="text" name="players" placeholder="Player 1 name" required />
+                    <input type="text" name="players" placeholder="Player 2 name" required />
+                </div>
+                <button type="button" id="add">Add Player</button>
+            </fieldset>
+            <button type="submit">Create Game</button>
+        </form>
+    </main>
+    <script>
+        const players = document.getElementById('players');
+        document.getElementById('add').addEventListener('click', () => {
+            if (players.children.length >= 6) return;
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.name = 'players';
+            input.placeholder = `Player ${players.children.length + 1} name`;
+            players.appendChild(input);
+        });
+    </script>
+</body>
+</html>
+
+
